@@ -76,7 +76,7 @@ Ea = Ea_pu * Vt1;
 Vt = Vt_pu * Vt2;
 
 % print key results
-disp(sprintf("KEY VALUES (System International)\nInternal Voltage: %.2f V\nTerminal Voltage: %.2f V\nLoading Angle: %.2f°\n", abs(Ei), abs(Ea), loading_angle*180/pi));
+disp(sprintf("\nKEY VALUES (System International)\nInternal Voltage: %.2f V\nTerminal Voltage: %.2f V\nLoading Angle: %.2f°\n", abs(Ei), abs(Ea), loading_angle*180/pi));
 
 % print intermediate values 
-disp(sprintf("INTERMEDIATE VALUES (Per Unit)\nLoad Current: %.2f @ %.2f°\nQuadature Voltage: %.2f @ %.2f°", abs(I_pu), angle(I_pu)*180/pi, abs(Eq_pu), angle(Eq)*180/pi));
+disp(sprintf("INTERMEDIATE VALUES (Per Unit)\nLoad Current: %.2f @ %.2f°\nQuadature Voltage: %.2f @ %.2f°\nTransformer Voltage: %.2f @ %.2f°\n", abs(I_pu), angle(I_pu)*180/pi, abs(Eq_pu), angle(Eq_pu)*180/pi, abs(Vt_pu), angle(Vt_pu)*180/pi));
