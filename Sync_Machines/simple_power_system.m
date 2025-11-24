@@ -1,0 +1,82 @@
+% You are given the following power system
+% G----|--T--|-----|---->
+% A synchronous generator, a step-up transformer, a line, and a load.
+
+% givens
+% generator
+Sg = 20e6;  % VA
+Vg = 6.6e3; % V
+Xd = 0.6;   % pu
+Xq = 0.5;   % pu
+% transformer
+St = 30e6;  % VA
+Vt1 = 7e3;  % V
+Vt2 = 20e3; % V
+Vsc = 0.08; % pu
+% line
+length = 3;                         % km
+line_impedence_per_km = 5 + 1i * 12; % ohms / km
+% load
+Sl = 12e6;           % VA   
+power_factor = 0.8;  % cos(phi)
+lagging = false;     % true for lagging load and false for leading load
+Vl = 23e3;           % V
+
+% unknowns (if matrix, read as [magnitude phase])
+loading_angle;
+load_angle;
+I;      % load current
+id;     % direct axis current
+Vt;     % transformer voltage
+Ea;     % terminal voltage
+Eq;     % quadature voltage
+Ei;     % internal voltage
+I_pu;  
+id_pu;
+Vt_pu; 
+Ea_pu; 
+Eq_pu; 
+Ei_pu; 
+
+% preliminary calculations
+S_base = St; % set base apparent power to transformer apparent power
+             % to avoid recalculation of transformer values
+Zb1 = Vt1^2 / S_base;
+Zb2 = Vt2^2 / S_base;
+line_impedence = length * line_impedence_per_km;
+line_impedence_pu = line_impedence / Zb2;
+Xt_pu = Vsc;
+Sg_pu = Sg / S_base;
+Sl_pu = Sl / S_base;
+St_pu = St / S_base;
+Vg_pu = Vg / Vt1;
+Vl_pu = Vl / Vt2;
+% recalculating generator reactacnes xq and xd
+Zb_g = Vg^2 / Sg;
+Xq_new = Xq * (Zb_g / Zb1);
+Xd_new = Xd * (Zb_g / Zb1);
+I_pu = (Sl_pu / Vl_pu);
+load_angle = acos(power_factor);
+I_pu = I_pu * exp(1i * load_angle); 
+if (lagging == true)
+    I_pu = I_pu * exp(-1i * load_angle); 
+end
+I_pu = I_pu * exp(1i * I(2));
+Vt_pu = I_pu * line_impedence_pu + Vl_pu;
+Ea_pu = I_pu * 1i * Xt_pu + Vt_pu;  
+Eq_pu = I_pu * 1i * Xq_new + Ea_pu;
+loading_angle = angle(Eq_pu) - angle(Ea_pu);
+id_pu = abs(I_pu * cos(pi/2 - loading_angle + load_angle));
+Ei_pu = abs(Eq_pu) + (Xd_new - Xq_new) * id_pu;
+
+% converting to SI
+Ei = Ei_pu * Vt1; 
+Eq = Eq_pu * Vt1;
+Ea = Ea_pu * Vt1;
+Vt = Vt_pu * Vt2;
+
+% print key results
+disp(sprintf("KEY VALUES (System International)\nInternal Voltage: %.2f V\nTerminal Voltage: %.2f V\nLoading Angle: %.2f°\n", abs(Ei), abs(Ea), loading_angle*180/pi));
+
+% print intermediate values 
+disp(sprintf("INTERMEDIATE VALUES (Per Unit)\nLoad Current: %.2f @ %.2f°\nQuadature Voltage: %.2f @ %.2f°", abs(I_pu), angle(I_pu)*180/pi, abs(Eq_pu), angle(Eq)*180/pi));
