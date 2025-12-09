@@ -1,0 +1,188 @@
+function [I_load, I_generator, id, Vt, Ea, Eq, Ei] = simple_sync_machine(Sg, Vg, Xd, Xq, St, Vt1, Vt2, Vsc, length, line_resistance_per_km, line_reactance_per_km, line_impedence_per_km, Sl, power_factor, lagging, Vl)
+%SIMPLE_SYNC_MACHINE Models a synchronous generator connected to a load.
+%   Calculates voltages, currents, and power flow in SI and Per-Unit.
+
+arguments (Input)
+    Sg;                         % Generator Apparent Power Rating (VA)
+    Vg;                         % Generator Voltage Rating (V)
+    Xd;                         % Direct Axis Reactance (pu on Gen Base)
+    Xq;                         % Quadrature Axis Reactance (pu on Gen Base)
+    St;                         % Transformer Apparent Power Rating (VA)
+    Vt1;                        % Transformer Primary Voltage (V)
+    Vt2;                        % Transformer Secondary Voltage (V)
+    Vsc;                        % Transformer Short Circuit Voltage (pu or %)
+    length;                     % Transmission Line Length (km)
+    line_resistance_per_km;     % Line Resistance (Ohm/km)
+    line_reactance_per_km;      % Line Reactance (Ohm/km)
+    line_impedence_per_km;      % (Unused if R & X provided)
+    Sl;                         % Load Apparent Power (VA)
+    power_factor;               % Load Power Factor (0 to 1)
+    lagging;                    % Boolean: true for lagging, false for leading
+    Vl;                         % Load Voltage (V)
+end
+arguments (Output)
+    I_load;
+    I_generator
+    id;
+    Vt;
+    Ea;
+    Eq;
+    Ei;
+end
+
+%% 1. Base Values and Conversions
+S_base = St; % Set system base to Transformer Rating
+
+% Calculate Base Impedances for each voltage level
+Zb1 = Vt1^2 / S_base; % Primary Side (Generator Side)
+Zb2 = Vt2^2 / S_base; % Secondary Side (Line/Load Side)
+
+% Line Impedance in PU
+% Note: Using R and X separately is better if available.
+% If line_impedence_per_km is complex and provided, use it. Otherwise construct Z.
+if line_impedence_per_km ~= 0 && ~isnan(line_impedence_per_km)
+    Z_line_actual = length * line_impedence_per_km;
+else
+    Z_line_actual = length * (line_resistance_per_km + 1i * line_reactance_per_km);
+end
+line_impedence_pu = Z_line_actual / Zb2;
+
+% Component PU Conversions
+Xt_pu = Vsc;        % Transformer Zpu is roughly Vsc (if Vsc is in pu)
+Sg_pu = Sg / S_base;
+Sl_pu = Sl / S_base;
+Vg_pu = Vg / Vt1;   % Generator voltage in pu relative to Transformer primary
+Vl_pu = Vl / Vt2;   % Load voltage in pu relative to Transformer secondary
+
+% Recalculate Generator Reactances to System Base (S_base, Vt1)
+% Original Base for Generator: Z_gen_old = Vg^2 / Sg
+% New Base for Generator side: Zb1 = Vt1^2 / S_base
+% Conversion Factor: Z_old_pu * (Z_gen_old / Zb1)
+Z_gen_old_base = Vg^2 / Sg;
+Xq_new = Xq * (Z_gen_old_base / Zb1);
+Xd_new = Xd * (Z_gen_old_base / Zb1);
+
+%% 2. Phaser Calculations
+% Load Current Calculation
+% S = V * I* =>  I = (S / V)*
+load_angle_pf = acos(power_factor);
+if (lagging == true)
+    load_angle_pf = -load_angle_pf; % Lagging current lags voltage (negative angle)
+else
+    load_angle_pf = load_angle_pf;  % Leading current leads voltage (positive angle)
+end
+
+% Current magnitude
+I_mag_pu = Sl_pu / Vl_pu;
+% Current phasor (Assuming Load Voltage angle is 0 as reference)
+I_pu = I_mag_pu * exp(1i * load_angle_pf); 
+
+% Voltage Drops
+% Terminal Voltage at start of line (Transformer Secondary)
+Vt_pu = Vl_pu + I_pu * line_impedence_pu; 
+
+% Generator Terminal Voltage (Transformer Primary, Ea)
+% Ea = Vt + I * jXt
+Ea_pu = Vt_pu + I_pu * 1i * Xt_pu;  
+
+% Internal Voltage (Quadrature Axis, Eq)
+% Eq is fictitious voltage behind synchronous reactance
+Eq_pu = Ea_pu + I_pu * 1i * Xq_new;
+
+% Calculate Load Angles
+delta = angle(Eq_pu);        % Power angle (delta) relative to reference
+theta_Ea = angle(Ea_pu);     % Angle of terminal voltage
+theta_I = angle(I_pu);       % Angle of current
+
+loading_angle = delta - theta_Ea; % Angle between Eq and Ea (internal load angle)
+
+%% 3. Salient Pole Calculations (d-q axis)
+% Current projection onto d-q axes
+% Id = |I| * sin(delta - theta_I)
+% Note: Standard definition: Id is the component of I lagging Eq by 90 degrees.
+id_mag_pu = abs(I_pu) * sin(delta - theta_I);
+
+% Assign angle to Id (it lies on the d-axis, which lags q-axis by 90 deg)
+id_pu = id_mag_pu * exp(1i * (delta - pi/2));
+
+% Excitation Voltage (Ei or E_f)
+% For Salient pole: Ei = |Eq| + (Xd - Xq) * Id_mag
+Ei_mag_pu = abs(Eq_pu) + (Xd_new - Xq_new) * id_mag_pu;
+Ei_pu = Ei_mag_pu * exp(1i * delta); % It lies on the q-axis
+
+%% 4. Convert to SI Units
+Ei = Ei_pu * Vt1; 
+Eq = Eq_pu * Vt1;
+Ea = Ea_pu * Vt1;
+Vt = Vt_pu * Vt2;
+
+I_generator = I_pu * (S_base / Vt1); % Current on primary side
+I_load = I_pu * (S_base / Vt2);      % Current on secondary side
+id = id_pu * (S_base / Vt1);         % Id is on generator side
+
+%% 5. Power Equilibrium Check
+% Generator Active Power (Salient Pole Power Equation)
+% P = (Ea*Ei/Xd)*sin(delta_int) + (V^2/2)*(1/Xq - 1/Xd)*sin(2*delta_int)
+P_gen_pu = (abs(Ei_pu)*abs(Ea_pu) / Xd_new) * sin(loading_angle) + ...
+           (0.5 * abs(Ea_pu)^2) * ( (1/Xq_new) - (1/Xd_new) ) * sin(2*loading_angle);
+
+% Generator Reactive Power
+Q_gen_pu = ( abs(Ea_pu) * (abs(Ei_pu)*cos(loading_angle) - abs(Ea_pu)) / Xd_new ) - ...
+           (0.5 * abs(Ea_pu)^2) * ( (1/Xq_new) - (1/Xd_new) ) * (1 - cos(2*loading_angle));
+
+% Transformer Losses (Reactive only as R is neglected in Xt)
+S_transformer_pu = abs(I_pu)^2 * 1i * Xt_pu;
+P_transformer_pu = real(S_transformer_pu);
+Q_transformer_pu = imag(S_transformer_pu);
+
+% Line Losses
+S_line_pu = abs(I_pu)^2 * line_impedence_pu;
+P_line_pu = real(S_line_pu);
+Q_line_pu = imag(S_line_pu);
+
+% Load Power
+P_load_pu = Sl_pu * power_factor;
+Q_load_pu = Sl_pu * sin(acos(power_factor));
+if (lagging == false)
+    Q_load_pu = -Q_load_pu;
+end
+
+% Totals
+P_consumed_pu = P_transformer_pu + P_line_pu + P_load_pu;
+Q_consumed_pu = Q_transformer_pu + Q_line_pu + Q_load_pu;
+
+%% 6. Printing
+fprintf("================ SYSTEM INFORMATION ================\n");
+if (lagging == true)
+    fprintf("Load Type:       Lagging\n");
+else
+    fprintf("Load Type:       Leading\n");
+end
+fprintf("Line Impedance:  %.4f + j%.4f Ω\n", real(Z_line_actual), imag(Z_line_actual));
+fprintf("Line Length:     %.4f km\n", length);
+
+fprintf("\n------------ VOLTAGES (SI) ------------\n");
+fprintf("Excitation EMF (Ei):    %.4f V @ %.2f°\n", abs(Ei), angle(Ei)*180/pi);
+fprintf("Terminal Voltage (Ea):  %.4f V @ %.2f°\n", abs(Ea), angle(Ea)*180/pi);
+fprintf("Load Side Voltage (Vt): %.4f V @ %.2f°\n", abs(Vt), angle(Vt)*180/pi);
+fprintf("Loading Angle:          %.2f°\n", loading_angle*180/pi);
+
+fprintf("\n------------ CURRENTS (SI) ------------\n");
+fprintf("Load Current:        %.4f A @ %.2f°\n", abs(I_load), angle(I_load)*180/pi);
+fprintf("Direct Axis Current: %.4f A @ %.2f°\n", abs(id), angle(id)*180/pi);
+
+fprintf("\n------------ PER UNIT VALUES ------------\n");
+fprintf("Internal Voltage (Ei): %.4f pu\n", abs(Ei_pu));
+fprintf("Terminal Voltage (Ea): %.4f pu\n", abs(Ea_pu));
+fprintf("Generator Current (I):      %.4f pu @ %.2f°\n", abs(I_pu), angle(I_pu)*180/pi);
+
+fprintf("\n------------ POWER BALANCE (PU) ------------\n");
+fprintf("Generated:        %.4f + j%.4f\n", P_gen_pu, Q_gen_pu);
+fprintf("Consumed:         %.4f + j%.4f\n", P_consumed_pu, Q_consumed_pu);
+fprintf("  - Load:         %.4f + j%.4f\n", P_load_pu, Q_load_pu);
+fprintf("  - Line:         %.4f + j%.4f\n", P_line_pu, Q_line_pu);
+fprintf("  - Transformer:  %.4f + j%.4f\n", P_transformer_pu, Q_transformer_pu);
+fprintf("Difference:       %.4e + j%.4e\n", P_gen_pu - P_consumed_pu, Q_gen_pu - Q_consumed_pu);
+fprintf("====================================================\n");
+
+end
