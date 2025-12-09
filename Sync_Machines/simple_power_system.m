@@ -18,28 +18,30 @@ Vt2 = 20e3; % V
 Vsc = 0.08; % pu
 % line
 length = 3;                         % km
-line_impedence_per_km = 5 + 1i * 12; % ohms / km
+line_resistance_per_km = 5;
+line_reactance_per_km = 12;
+line_impedence_per_km = line_resistance_per_km + 1i * line_reactance_per_km; % ohms / km
 % load
 Sl = 12e6;           % VA   
 power_factor = 0.8;  % cos(phi)
-lagging = true;     % true for lagging load and false for leading load
+lagging = false;     % true for lagging load and false for leading load
 Vl = 23e3;           % V
 
 % unknowns 
-loading_angle = 0;
-load_angle = 0;
-I = 0;      % load current
-id = 0;     % direct axis current
-Vt = 0;     % transformer voltage
-Ea = 0;     % terminal voltage
-Eq = 0;     % quadature voltage
-Ei = 0;     % internal voltage
-I_pu = 0;  
-id_pu = 0;
-Vt_pu = 0; 
-Ea_pu = 0; 
-Eq_pu = 0; 
-Ei_pu = 0; 
+% loading_angle
+% load_angle
+% I      load current
+% id     direct axis current
+% Vt     transformer voltage
+% Ea     terminal voltage
+% Eq     quadature voltage
+% Ei     internal voltage
+% I_pu   
+% id_pu 
+% Vt_pu  
+% Ea_pu  
+% Eq_pu  
+% Ei_pu  
 
 % preliminary calculations
 S_base = St; % set base apparent power to transformer apparent power
@@ -60,16 +62,15 @@ Xq_new = Xq * (Zb_g / Zb1);
 Xd_new = Xd * (Zb_g / Zb1);
 I_pu = (Sl_pu / Vl_pu);
 load_angle = acos(power_factor);
-if (lagging == false)
-    I_pu = I_pu * exp(1i * load_angle); 
-else
-    I_pu = I_pu * exp(-1i * load_angle); 
+if (lagging == true)
+    load_angle = -load_angle;
 end
+I_pu = I_pu * exp(1i * load_angle);
 Vt_pu = I_pu * line_impedence_pu + Vl_pu;
 Ea_pu = I_pu * 1i * Xt_pu + Vt_pu;  
 Eq_pu = I_pu * 1i * Xq_new + Ea_pu;
 loading_angle = angle(Eq_pu) - angle(Ea_pu);
-id_pu = abs(I_pu * cos(pi/2 - loading_angle + load_angle));
+id_pu = abs(I_pu) * sin(loading_angle + angle(Ea_pu) - load_angle);
 Ei_pu = abs(Eq_pu) + (Xd_new - Xq_new) * id_pu;
 
 % converting to SI
@@ -77,6 +78,8 @@ Ei = Ei_pu * Vt1;
 Eq = Eq_pu * Vt1;
 Ea = Ea_pu * Vt1;
 Vt = Vt_pu * Vt2;
+I1 = I_pu * S_base/Vt1;
+I2 = I_pu * S_base/Vt2;
 
 % confirming power equilibrium
 % Check power equilibrium
@@ -101,21 +104,28 @@ end
 P_consumed_pu = P_transformer_pu + P_line_pu + P_load_pu;
 Q_consumed_pu = Q_transformer_pu + Q_line_pu + Q_load_pu;
 
+fprintf("System Information:\n");
 % print if load is lagging or leading
 if (lagging == true)
-    fprintf("\nLagging load.\n");
+    fprintf("Lagging load.\n");
 else
-    fprintf("\nLeading load.\n");
+    fprintf("Leading load.\n");
 end
+% print line impedence
+fprintf("Line Impedence: %.4f + j %.4f ohms\n", line_resistance_per_km * length, line_reactance_per_km * length);
+fprintf("Line Length: %.4f\n", length);
 
 % print voltages (SI) and loading angle
-fprintf("\nVOLTAGES AND LOADING ANGLE (System International)\nInternal Voltage: %.2f V\nTerminal Voltage: %.2f V @ %.2f°\nLoading Angle: %.2f°\n", abs(Ei), abs(Ea), angle(Ea)*180/pi, loading_angle*180/pi);
+fprintf("\nVOLTAGES AND LOADING ANGLE (System International)\nInternal Voltage: %.4f V\nTerminal Voltage: %.4f V @ %.2f°\nLoading Angle: %.2f°", abs(Ei), abs(Ea), angle(Ea)*180/pi, loading_angle*180/pi);
+
+% print intermediate values (SI)
+fprintf("\n\nINTERMEDIATE VALUES (System International)\nLoad Current: %.4f A @ %.2f°\nQuadature Voltage: %.4f V @ %.2f°\nTransformer Voltage: %.4f V @ %.2f°", abs(I2), angle(I2)*180/pi, abs(Eq), angle(Eq)*180/pi, abs(Vt), angle(Vt)*180/pi);
 
 % print voltages (PU) and loading angle
-fprintf("\nVOLTAGES AND LOADING ANGLE (Per Unit)\nInternal Voltage: %.2f\nTerminal Voltage: %.2f @ %.2f°\nLoading Angle: %.2f°\n", abs(Ei_pu), abs(Ea_pu), angle(Ea_pu)*180/pi, loading_angle*180/pi);
+fprintf("\n\nVOLTAGES AND LOADING ANGLE (Per Unit)\nInternal Voltage: %.2f\nTerminal Voltage: %.2f @ %.2f°\nLoading Angle: %.2f°", abs(Ei_pu), abs(Ea_pu), angle(Ea_pu)*180/pi, loading_angle*180/pi);
+
+% print intermediate values (PU)
+fprintf("\n\nINTERMEDIATE VALUES (Per Unit)\nLoad Current: %.4f @ %.2f°\nQuadature Voltage: %.4f @ %.2f°\nTransformer Voltage: %.4f @ %.2f°", abs(I_pu), angle(I_pu)*180/pi, abs(Eq_pu), angle(Eq_pu)*180/pi, abs(Vt_pu), angle(Vt_pu)*180/pi);
 
 % print power equilibrium
-fprintf("\nPOWER EQUILIBIRUM\nGenerated Power = %.4f + j %.4f\nTransformer Power = %.4f + j %.4f\nLine Power = %.4f + j %.4f\nLoad Power = %.4f + j %.4f\nConsumed Active Power = %.4f + %.4f + %.4f = %.4f\nConsumed Reactive Power = %.4f + %.4f + %.4f = %.4f\n", P_gen_pu, Q_gen_pu, P_transformer_pu, Q_transformer_pu, P_line_pu, Q_line_pu, P_load_pu, Q_load_pu, P_transformer_pu, P_line_pu, P_load_pu, P_consumed_pu, Q_transformer_pu, Q_line_pu, Q_load_pu, Q_consumed_pu);
-
-% print intermediate values 
-fprintf("\nINTERMEDIATE VALUES (Per Unit)\nLoad Current: %.2f @ %.2f°\nQuadature Voltage: %.2f @ %.2f°\nTransformer Voltage: %.2f @ %.2f°\n", abs(I_pu), angle(I_pu)*180/pi, abs(Eq_pu), angle(Eq_pu)*180/pi, abs(Vt_pu), angle(Vt_pu)*180/pi);
+fprintf("\n\nPOWER EQUILIBIRUM\nGenerated Power = %.4f + j %.4f\nTransformer Power = %.4f + j %.4f\nLine Power = %.4f + j %.4f\nLoad Power = %.4f + j %.4f\nConsumed Active Power = %.4f + %.4f + %.4f = %.4f\nConsumed Reactive Power = %.4f + %.4f + %.4f = %.4f\n", P_gen_pu, Q_gen_pu, P_transformer_pu, Q_transformer_pu, P_line_pu, Q_line_pu, P_load_pu, Q_load_pu, P_transformer_pu, P_line_pu, P_load_pu, P_consumed_pu, Q_transformer_pu, Q_line_pu, Q_load_pu, Q_consumed_pu);
